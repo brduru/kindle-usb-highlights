@@ -1,6 +1,6 @@
 # Kindle USB Highlights
 
-Plugin do [Obsidian](https://obsidian.md) que importa os destaques e as notas do Kindle pelo cabo USB, lendo o arquivo `My Clippings.txt` do aparelho. Ele cria **uma nota por livro**, no mesmo formato das notas do plugin [Kindle Highlights](https://github.com/hadynz/obsidian-kindle-plugin).
+Plugin do [Obsidian](https://obsidian.md) (1.13.1 ou mais novo) que importa os destaques e as notas do Kindle pelo cabo USB, lendo o arquivo `My Clippings.txt` do aparelho. Ele cria **uma nota por livro**, no mesmo formato das notas do plugin [Kindle Highlights](https://github.com/hadynz/obsidian-kindle-plugin).
 
 Serve para livros que não vieram da Amazon, como os enviados por USB ou pelo Calibre. Os destaques desses livros não sincronizam pela nuvem e só existem no `My Clippings.txt`.
 
@@ -81,6 +81,11 @@ Reimportar nunca apaga nada da nota:
 - O nome do arquivo é saneado: sem `/`, `\`, `..`, caracteres de controle nem caracteres proibidos no Obsidian.
 - O frontmatter é gerado por um emissor YAML próprio, sem interpretar YAML de terceiros. Valores com caracteres especiais saem entre aspas com escape.
 - Funciona só no desktop (`isDesktopOnly`), porque lê o arquivo do Kindle pelo sistema de arquivos.
+
+A revisão automática do diretório de plugins aponta dois comportamentos, ambos propositais:
+
+- **Acesso direto ao sistema de arquivos (`fs`).** O `My Clippings.txt` fica no Kindle, fora do cofre, e a API do Obsidian só lê arquivos dentro do cofre. O plugin usa `fs` apenas para `stat` e `readFile` do arquivo que você indica; nunca escreve fora do cofre. O botão **Escolher arquivo…** lê o arquivo pelo seletor do sistema, sem `fs`.
+- **Listagem dos arquivos do cofre.** Para não duplicar notas, o plugin procura no cofre inteiro as notas que ele mesmo criou (chave `kindle-usb`) e as do Kindle Highlights (chave `kindle-sync`), lendo só o frontmatter já indexado pelo Obsidian. A busca não se limita a uma pasta porque cada pessoa organiza o cofre do seu jeito e pode mover as notas.
 
 ## Instalação manual
 

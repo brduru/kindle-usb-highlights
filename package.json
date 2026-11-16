@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-kindle-usb",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "Importa destaques e notas do Kindle via USB (My Clippings.txt) para o Obsidian",
 	"main": "main.js",
 	"type": "module",

@@ -39,8 +39,14 @@ jobs:
                   subject-path: |
                       main.js
                       styles.css
-            - name: Cria a release (rascunho)
+            - name: Cria a release (rascunho) com as notas do CHANGELOG
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
                   TAG: ${{ github.ref_name }}
-              run: gh release create "$TAG" --title="$TAG" --draft main.js manifest.json styles.css
+              run: |
+                  awk -v v="$TAG" '/^## /{p = ($2 == v); next} p' CHANGELOG.md > "$RUNNER_TEMP/notas.md"
+                  if ! grep -q '[^[:space:]]' "$RUNNER_TEMP/notas.md"; then
+                    echo "CHANGELOG.md não tem a seção '## $TAG'"
+                    exit 1
+                  fi
+                  gh release create "$TAG" --title="$TAG" --notes-file "$RUNNER_TEMP/notas.md" --draft main.js manifest.json styles.css

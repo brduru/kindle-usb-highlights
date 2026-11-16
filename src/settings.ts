@@ -1,8 +1,9 @@
-import { App, Notice, PluginSettingTab, Setting } from 'obsidian';
+import { App, PluginSettingTab, type SettingDefinitionItem } from 'obsidian';
 import { userInfo } from 'os';
 import type { BookState } from './core/importer.ts';
 import { normalizeFolder } from './core/importer.ts';
 import type KindleUsbPlugin from './main.ts';
+import { ConfirmModal } from './ui/confirmModal.ts';
 
 export interface KindleUsbSettings {
 	clippingsPath: string;
@@ -63,6 +64,8 @@ export function sanitizeSettings(raw: unknown): KindleUsbSettings {
 	};
 }
 
+type ControlKey = 'clippingsPath' | 'folder' | 'includePage';
+
 export class KindleUsbSettingTab extends PluginSettingTab {
 	plugin: KindleUsbPlugin;
 
@@ -71,76 +74,92 @@ export class KindleUsbSettingTab extends PluginSettingTab {
 		this.plugin = plugin;
 	}
 
-	display(): void {
-		const { containerEl } = this;
+	getSettingDefinitions(): SettingDefinitionItem<ControlKey>[] {
 		const settings = this.plugin.settings;
-		containerEl.empty();
-
-		new Setting(containerEl)
-			.setName('Arquivo My Clippings.txt')
-			.setDesc('Caminho do arquivo no Kindle conectado por USB. Também dá para escolher outro arquivo na hora de importar.')
-			.addText((text) =>
-				text
-					.setPlaceholder(defaultClippingsPath())
-					.setValue(settings.clippingsPath)
-					.onChange(async (value) => {
-						settings.clippingsPath = value.trim() || defaultClippingsPath();
-						await this.plugin.saveSettings();
-					}),
-			);
-
-		new Setting(containerEl)
-			.setName('Pasta de destino')
-			.setDesc('Pasta do cofre onde as notas dos livros são criadas. Notas que já existem continuam onde estão.')
-			.addText((text) =>
-				text
-					.setPlaceholder('Kindle')
-					.setValue(settings.folder)
-					.onChange(async (value) => {
+		const ignored = settings.ignoredBooks.length;
+		const books = Object.keys(settings.books).length;
+		return [
+			{
+				name: 'Arquivo My Clippings.txt',
+				desc: 'Caminho do arquivo no Kindle conectado por USB. Também dá para escolher outro arquivo na hora de importar.',
+				aliases: ['kindle', 'clippings', 'usb'],
+				control: { type: 'text', key: 'clippingsPath', placeholder: defaultClippingsPath() },
+			},
+			{
+				name: 'Pasta de destino',
+				desc: 'Pasta do cofre onde as notas dos livros são criadas. Notas que já existem continuam onde estão.',
+				control: {
+					type: 'folder',
+					key: 'folder',
+					placeholder: 'Kindle',
+					validate: (value) => {
 						try {
-							settings.folder = normalizeFolder(value);
-							await this.plugin.saveSettings();
+							normalizeFolder(value);
+							return undefined;
 						} catch (e) {
-							new Notice(e instanceof Error ? e.message : String(e));
+							return e instanceof Error ? e.message : String(e);
 						}
-					}),
-			);
-
-		new Setting(containerEl)
-			.setName('Mostrar a página')
-			.setDesc('Acrescenta "· page: N" depois da posição, quando o Kindle informa a página.')
-			.addToggle((toggle) =>
-				toggle.setValue(settings.includePage).onChange(async (value) => {
-					settings.includePage = value;
-					await this.plugin.saveSettings();
-				}),
-			);
-
-		new Setting(containerEl)
-			.setName('Livros ignorados')
-			.setDesc(`${settings.ignoredBooks.length} livro(s) desmarcado(s) em importações anteriores vêm desmarcados por padrão.`)
-			.addButton((button) =>
-				button.setButtonText('Limpar lista').onClick(async () => {
+					},
+				},
+			},
+			{
+				name: 'Mostrar a página',
+				desc: 'Acrescenta "· page: N" depois da posição, quando o Kindle informa a página.',
+				control: { type: 'toggle', key: 'includePage' },
+			},
+			{
+				name: 'Limpar a lista de livros ignorados',
+				desc: `${ignored} livro(s) desmarcado(s) à mão em importações anteriores vêm desmarcados por padrão.`,
+				disabled: ignored === 0,
+				action: () => {
 					settings.ignoredBooks = [];
-					await this.plugin.saveSettings();
-					this.display();
-				}),
-			);
+					void this.plugin.saveSettings().then(() => this.update());
+				},
+			},
+			{
+				name: 'Esquecer o histórico de importação',
+				desc: `${books} livro(s) com histórico. O histórico impede que destaques apagados à mão voltem; sem ele, eles voltam na próxima importação.`,
+				disabled: books === 0,
+				action: () => {
+					new ConfirmModal(
+						this.app,
+						'Esquecer o histórico de importação?',
+						'Destaques que você apagou à mão das notas voltarão na próxima importação. As notas não são alteradas agora.',
+						'Esquecer histórico',
+						async () => {
+							settings.books = {};
+							await this.plugin.saveSettings();
+							this.update();
+						},
+					).open();
+				},
+			},
+		];
+	}
 
-		new Setting(containerEl)
-			.setName('Histórico de importação')
-			.setDesc(
-				`${Object.keys(settings.books).length} livro(s) com histórico. O histórico impede que destaques apagados à mão voltem. Ao esquecê-lo, eles voltam na próxima importação.`,
-			)
-			.addButton((button) =>
-				button
-					.setButtonText('Esquecer histórico')
-					.setWarning()
-					.onClick(async () => {
-						settings.books = {};
-						await this.plugin.saveSettings();
-						this.display();
-					}),
-			);
+	getControlValue(key: string): unknown {
+		const settings = this.plugin.settings;
+		if (key === 'clippingsPath') return settings.clippingsPath;
+		if (key === 'folder') return settings.folder;
+		if (key === 'includePage') return settings.includePage;
+		return undefined;
+	}
+
+	async setControlValue(key: string, value: unknown): Promise<void> {
+		const settings = this.plugin.settings;
+		if (key === 'clippingsPath' && typeof value === 'string') {
+			settings.clippingsPath = value.trim() || defaultClippingsPath();
+		} else if (key === 'folder' && typeof value === 'string') {
+			try {
+				settings.folder = normalizeFolder(value);
+			} catch {
+				return; // validate() já mostra o erro ao lado do campo
+			}
+		} else if (key === 'includePage' && typeof value === 'boolean') {
+			settings.includePage = value;
+		} else {
+			return;
+		}
+		await this.plugin.saveSettings();
 	}
 }
