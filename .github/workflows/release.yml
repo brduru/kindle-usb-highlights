@@ -1,0 +1,46 @@
+# Publica uma release (rascunho) quando uma tag é enviada, só depois de o CI
+# completo (build, testes e as três verificações de segurança) passar.
+name: Release
+
+on:
+    push:
+        tags:
+            - '*'
+
+permissions:
+    contents: read
+
+jobs:
+    checks:
+        uses: ./.github/workflows/ci.yml
+
+    release:
+        needs: checks
+        runs-on: ubuntu-24.04
+        permissions:
+            contents: write
+            id-token: write
+            attestations: write
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+            - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+              with:
+                  node-version: 24
+                  cache: npm
+            - name: Build
+              run: |
+                  npm ci --no-fund --no-audit
+                  npm run build
+            - name: Atestado de proveniência
+              uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+              with:
+                  subject-path: |
+                      main.js
+                      styles.css
+            - name: Cria a release (rascunho)
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  TAG: ${{ github.ref_name }}
+              run: gh release create "$TAG" --title="$TAG" --draft main.js manifest.json styles.css

@@ -1,0 +1,9 @@
+{
+	"id": "kindle-usb-highlights",
+	"name": "Kindle USB Highlights",
+	"version": "0.1.0",
+	"minAppVersion": "1.5.7",
+	"description": "Importa destaques e notas do My Clippings.txt do Kindle (USB), uma nota por livro, no formato do Kindle Highlights.",
+	"author": "brduru",
+	"isDesktopOnly": true
+}

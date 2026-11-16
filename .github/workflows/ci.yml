@@ -1,0 +1,118 @@
+# Build, testes e as três verificações de segurança. Qualquer achado reprova
+# o pipeline: OpenGrep (SAST), OWASP dep-scan (dependências) e gitleaks
+# (segredos no histórico). Ferramentas com versão fixada e SHA-256 conferido;
+# actions fixadas por commit. Ao subir uma versão, troque aqui e na máquina
+# local juntos, para o CI e o terminal darem o mesmo resultado.
+name: CI
+
+on:
+    push:
+        branches: ['**']
+    pull_request:
+    workflow_call:
+
+permissions:
+    contents: read
+
+jobs:
+    build:
+        runs-on: ubuntu-24.04
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+            - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+              with:
+                  node-version: 24
+                  cache: npm
+            - run: npm ci --no-fund --no-audit
+            - run: npm run build
+            - run: npm test
+            - run: npm run lint
+
+    opengrep:
+        runs-on: ubuntu-24.04
+        env:
+            OPENGREP_VERSION: v1.30.0
+            OPENGREP_SHA256: 35779bdd72e92129c8df2a77f0c55e8c08356801ea92591ef32108d6b28d564c
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+            - name: Instala o OpenGrep
+              run: |
+                  mkdir -p "$RUNNER_TEMP/bin"
+                  curl -fsSL -o "$RUNNER_TEMP/bin/opengrep" "https://github.com/opengrep/opengrep/releases/download/${OPENGREP_VERSION}/opengrep_manylinux_x86"
+                  echo "${OPENGREP_SHA256}  $RUNNER_TEMP/bin/opengrep" | sha256sum -c -
+                  chmod +x "$RUNNER_TEMP/bin/opengrep"
+                  echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+            - name: OpenGrep (qualquer achado reprova)
+              run: opengrep scan --config auto --error .
+
+    depscan:
+        runs-on: ubuntu-24.04
+        env:
+            DEPSCAN_VERSION: 6.3.0
+            CDXGEN_VERSION: 12.9.0
+            VDB_HOME: /tmp/vdb
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+            - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+              with:
+                  node-version: 24
+                  cache: npm
+            - name: Instala dep-scan e cdxgen
+              run: |
+                  npm install -g --no-fund --no-audit "@cyclonedx/cdxgen@${CDXGEN_VERSION}"
+                  python3 -m venv "$RUNNER_TEMP/depscan"
+                  "$RUNNER_TEMP/depscan/bin/pip" install -q "owasp-depscan==${DEPSCAN_VERSION}"
+                  echo "$RUNNER_TEMP/depscan/bin" >> "$GITHUB_PATH"
+            - run: depscan-vdb download --scope app
+            - run: npm ci --no-fund --no-audit
+            - name: dep-scan (qualquer vulnerabilidade reprova)
+              shell: bash
+              run: |
+                  d=/tmp/depscan-report; rm -rf "$d"
+                  depscan --no-banner --vdb-scope app --bom-engine CdxgenGenerator -t npm -i . -o "$d"
+                  mkdir -p depscan-report && cp -r "$d"/. depscan-report/
+                  if [ -z "$(find "$d" -name 'sbom-*.cdx.json')" ]; then
+                    echo "dep-scan: SBOM não gerado"
+                    exit 1
+                  fi
+                  fp=$(sed -n '/^### Falsos positivos/,/^#/p' README.md)
+                  n=$(find "$d" -name '*.vdr.json' -exec cat {} + \
+                    | jq -r -s 'map(.vulnerabilities // []) | add // [] | .[] | .id as $i | .affects[].ref | "\($i) \(.)"' \
+                    | sort -u | while read -r id ref; do
+                        m=${ref#pkg:*/}; m=${m%%\?*}; m=${m//%40/@}; v=${m##*@}; m=${m%@*}
+                        grep -F -- "$id" <<<"$fp" | grep -F -- "\`$m\`" | grep -qF -- "$v" || echo "$id $ref"
+                      done | tee depscan-report/abertos.txt | wc -l)
+                  echo "dep-scan: ${n} vulnerabilidades em aberto (depscan-report/abertos.txt)"
+                  test "$n" -eq 0
+            - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+              if: always()
+              with:
+                  name: depscan-report
+                  path: depscan-report/
+                  retention-days: 30
+
+    gitleaks:
+        runs-on: ubuntu-24.04
+        env:
+            GITLEAKS_VERSION: 8.30.1
+            GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  fetch-depth: 0
+                  persist-credentials: false
+            - name: Instala o gitleaks
+              run: |
+                  curl -fsSL -o /tmp/gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+                  echo "${GITLEAKS_SHA256}  /tmp/gitleaks.tar.gz" | sha256sum -c -
+                  mkdir -p "$RUNNER_TEMP/bin"
+                  tar -xzf /tmp/gitleaks.tar.gz -C "$RUNNER_TEMP/bin" gitleaks
+                  echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+            - name: gitleaks no histórico inteiro (qualquer segredo reprova)
+              run: gitleaks git --redact --verbose --exit-code 1 .

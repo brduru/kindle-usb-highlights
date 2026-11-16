@@ -1,0 +1,41 @@
+.kindle-usb-modal .kindle-usb-status {
+	margin: 0.5em 0;
+	color: var(--text-muted);
+}
+
+.kindle-usb-modal .kindle-usb-status.mod-warning {
+	color: var(--text-error);
+}
+
+.kindle-usb-modal .kindle-usb-list {
+	max-height: 50vh;
+	overflow-y: auto;
+	border-top: 1px solid var(--background-modifier-border);
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.kindle-usb-modal .kindle-usb-row label {
+	display: flex;
+	gap: 0.75em;
+	align-items: flex-start;
+	padding: 0.5em 0.25em;
+	cursor: pointer;
+}
+
+.kindle-usb-modal .kindle-usb-row + .kindle-usb-row {
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.kindle-usb-modal .kindle-usb-title {
+	font-weight: var(--font-semibold);
+}
+
+.kindle-usb-modal .kindle-usb-author,
+.kindle-usb-modal .kindle-usb-detail {
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+}
+
+.kindle-usb-hidden {
+	display: none;
+}
